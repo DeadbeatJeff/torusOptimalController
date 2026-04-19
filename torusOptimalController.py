@@ -38,8 +38,10 @@ def get_control_torques(q_curr, dq_curr, z_desired, z_dot_desired, kp, ki, kd, d
     G = G_func(q_curr[0], q_curr[1]).flatten()
 
     # 2. PID Target
+    max_integral = 5.0 # Tune this threshold
     error = np.array(z_desired) - z_curr
     integral_error += error * dt 
+    integral_error = np.clip(integral_error, -max_integral, max_integral)
     ddz_des = kp * error + kd * (z_dot_desired - J @ dq_curr) + ki * integral_error
 
     # 3. Define Constraints
@@ -87,16 +89,16 @@ t_end = 10
 t_num = 1000
 
 # Initial conditions
-q_q_dot_initial = [0, 0, 0, 0] # [q1, q2, dq1, dq2]
+q_q_dot_initial = [np.pi/4, np.pi/2, 0, 0] # [q1, q2, dq1, dq2]
 
 # Desired final task space position and velocity
-z_desired = [0.1, -0.1]
+z_desired = [0.25, 0.25]
 z_dot_desired = [0, 0]
 
 # PD controller constants
-kp = 50.0
+kp = 40.0
 ki = 0.0
-kd = 0.0
+kd = 15.0
 
 # Define symbols
 q1, q2 = sp.symbols('q1 q2')
