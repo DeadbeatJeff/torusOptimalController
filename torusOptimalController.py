@@ -38,10 +38,10 @@ def get_control_torques(q_curr, dq_curr, z_desired, z_dot_desired, kp, ki, kd, d
     G = G_func(q_curr[0], q_curr[1]).flatten()
 
     # 2. PID Target
-    max_integral = 5.0 # Tune this threshold
+    # max_integral = 5.0 # Tune this threshold
     error = np.array(z_desired) - z_curr
     integral_error += error * dt 
-    integral_error = np.clip(integral_error, -max_integral, max_integral)
+    # integral_error = np.clip(integral_error, -max_integral, max_integral)
     ddz_des = kp * error + kd * (z_dot_desired - J @ dq_curr) + ki * integral_error
 
     # 3. Define Constraints
