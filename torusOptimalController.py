@@ -89,10 +89,10 @@ t_end = 10
 t_num = 1000
 
 # Initial conditions
-q_q_dot_initial = [np.pi/4, np.pi/2, 0, 0] # [q1, q2, dq1, dq2]
+q_q_dot_initial = [-np.pi/4, np.pi/2, 0, 0] # [q1, q2, dq1, dq2]
 
 # Desired final task space position and velocity
-z_desired = [0.0, 0.50]
+z_desired = [0.25, 0.25]
 z_dot_desired = [0, 0]
 
 # PD controller constants
