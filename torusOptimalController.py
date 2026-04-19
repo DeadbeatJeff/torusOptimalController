@@ -119,9 +119,6 @@ x = 1 * sp.cos(q1) + 1 * sp.cos(q1 + q2)
 y = 1 * sp.sin(q1) + 1 * sp.sin(q1 + q2)
 z = sp.Matrix([x, y])
 
-# Jacobian
-J = z.jacobian(q)
-
 # Symbolic variables
 q1, q2 = sp.symbols('q1 q2')
 dq1, dq2 = sp.symbols('dq1 dq2')
