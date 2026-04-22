@@ -79,9 +79,9 @@ def get_control_torques(q_curr, dq_curr, z_desired, z_dot_desired, kp, ki, kd, d
 integral_error = np.array([0.0, 0.0])
 
 # Physical constants
-m1, m2 = 0.181, 0.181 # Mass constants
-l1, l2 = 0.250, 0.250 # Length constants
-g_val = 9.81  # Gravity constant
+m1, m2 = 0.181, 0.181 # Mass constants in kg
+l1, l2 = 0.250, 0.250 # Length constants in m
+g_val = 9.81  # Gravity constant in m/s^2
 
 # Time constants
 t_start = 0
@@ -162,14 +162,42 @@ initial_state = q_q_dot_initial # [q1, q2, dq1, dq2]
 # We pass a lambda that captures the state to get torques at each step
 sim_result = odeint(lambda s, t: robot_dynamics(s, t, lambda q, dq: get_control_torques(q, dq, z_desired, z_dot_desired, kp, ki, kd, dt)), 
      initial_state, t_span)
+# Plotting the results in Configuration Space (Torus Patch)
+plt.figure(figsize=(8, 8))
+plt.plot(sim_result[:, 0], sim_result[:, 1], label='Trajectory', alpha=0.7)
 
-# # Plotting the results
-# plt.figure(figsize=(10, 5))
-# plt.plot(t_span, sim_result[:, 0], label='Joint 1')
-# plt.plot(t_span, sim_result[:, 1], label='Joint 2')
-# plt.title("Joint Positions over Time")
-# plt.legend()
-# plt.show()
+# Mark the start and end points for clarity
+plt.scatter(sim_result[0, 0], sim_result[0, 1], color='green', label='Start', zorder=5)
+plt.scatter(sim_result[-1, 0], sim_result[-1, 1], color='red', label='End', zorder=5)
+
+plt.xlabel(r'Joint 1 ($\theta_1$)')
+plt.ylabel(r'Joint 2 ($\theta_2$)')
+plt.title(r'Configuration Space Trajectory on Torus ($\mathbb{T}^2$)')
+plt.legend()
+plt.grid(True, linestyle='--', alpha=0.6)
+plt.axis('equal') # Important for visualizing angular space correctly
+plt.show() 
+
+def compute_invariant_length(sim_result, t_span):
+    length = 0
+    # Calculate dt
+    dt = t_span[1] - t_span[0]
+    
+    for i in range(len(sim_result) - 1):
+        q = sim_result[i, :2]
+        dq = (sim_result[i+1, :2] - sim_result[i, :2]) / dt
+        
+        # Get the mass matrix at the current configuration
+        M = M_func(q[0], q[1])
+        
+        # Invariant arc-length element ds = sqrt(dq^T * M * dq) * dt
+        ds = np.sqrt(dq.T @ M @ dq) * dt
+        length += ds
+        
+    return length
+
+path_length = compute_invariant_length(sim_result, t_span)
+print(f"Invariant Path Length: {path_length:.4f} m^2 kg")
 
 # Convert joint angles to end-effector positions
 def get_arm_positions(q1, q2):
@@ -197,3 +225,12 @@ ax.grid()
 # Create the animation
 ani = FuncAnimation(fig, update, frames=len(t_span), interval=10, blit=True)
 plt.show()
+
+# Create the animation
+ani = FuncAnimation(fig, update, frames=len(t_span), interval=20, blit=True)
+
+# Save the animation as a GIF
+# 'pillow' is the standard writer for GIFs
+ani.save('robot_arm_motion.gif', writer='pillow', fps=30)
+
+print("Animation saved as robot_arm_motion.gif")
