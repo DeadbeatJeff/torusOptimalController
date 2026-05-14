@@ -6,231 +6,130 @@ from scipy.integrate import odeint
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
-def robot_dynamics(state, t, tau_func):
-    # Ensure state is 1D with 4 elements
-    state = np.array(state).flatten()
-    q_curr = state[:2]
-    dq_curr = state[2:]
-    
-    # Get current torques
-   # Ensure all are 1D arrays of size 2
-    tau = tau_func(q_curr, dq_curr).flatten()
+# --- Physical Constants ---
+m1, m2, m3 = 0.181, 0.181, 0.05  # Masses
+l1, l2, l3 = 0.250, 0.250, 0.10  # Lengths
+I3_val = 0.01                    # Moment of inertia for the wrist
+g_val = 9.81
 
-    M = M_func(q_curr[0], q_curr[1])
-    C = C_func(q_curr[0], q_curr[1], dq_curr[0], dq_curr[1]).flatten()
-    G = G_func(q_curr[0], q_curr[1]).flatten()
+# --- Controller Gains ---
+kp, ki, kd = 40.0, 0.0, 15.0
+integral_error = np.zeros(3)
 
-    # Now the subtraction will work
-    ddq = (np.linalg.solve(M, (tau - C - G))).flatten()
+# --- Symbolic Derivation ---
+q1, q2, q3 = sp.symbols('q1 q2 q3')
+dq1, dq2, dq3 = sp.symbols('dq1 dq2 dq3')
 
-    # Ensure return value is strictly 1D and length 4
-    return np.concatenate([dq_curr.flatten(), ddq.flatten()])
+# Forward Kinematics (Position + Orientation)
+x = l1 * sp.sin(q1) + l2 * sp.sin(q1 + q2) + l3 * sp.sin(q1 + q2 + q3)
+y = -l1 * sp.cos(q1) - l2 * sp.cos(q1 + q2) - l3 * sp.cos(q1 + q2 + q3)
+phi = q1 + q2 + q3
+z = sp.Matrix([x, y, phi])
+J = z.jacobian(sp.Matrix([q1, q2, q3]))
 
-def get_control_torques(q_curr, dq_curr, z_desired, z_dot_desired, kp, ki, kd, dt):
-    # Global variable
-    global integral_error
-
-    # 1. Compute state and Jacobians (Ensure these return flat 1D arrays/matrices)
-    z_curr = z_func(q_curr[0], q_curr[1]).flatten()
-    J = J_func(q_curr[0], q_curr[1]) # This is likely (2,2)
-    M = M_func(q_curr[0], q_curr[1]) # This is likely (2,2)
-    C = C_func(q_curr[0], q_curr[1], dq_curr[0], dq_curr[1]).flatten()
-    G = G_func(q_curr[0], q_curr[1]).flatten()
-
-    # 2. PID Target
-    # max_integral = 5.0 # Tune this threshold
-    error = np.array(z_desired) - z_curr
-    integral_error += error * dt 
-    # integral_error = np.clip(integral_error, -max_integral, max_integral)
-    ddz_des = kp * error + kd * (z_dot_desired - J @ dq_curr) + ki * integral_error
-
-    # 3. Define Constraints
-    # A_dyn: [-I, M] (2x4)
-    A_dyn = sparse.hstack([-sparse.eye(2), sparse.csc_matrix(M)])
-    # A_task: [0, J] (2x4)
-    A_task = sparse.hstack([sparse.csc_matrix((2, 2)), sparse.csc_matrix(J)])
-    
-    # A_full (4x4)
-    A_full = sparse.vstack([A_dyn, A_task]).tocsc()
-    
-    # b_full must be (4,)
-    b_full = np.concatenate([(-C - G).flatten(), ddz_des.flatten()])
-    
-    # 4. Setup Solver correctly (Defined ONCE)
-    prob = osqp.OSQP()
-    
-    # Define objective: Minimize torque (first 2 variables), Accelerations (last 2)
-    # H must be (4, 4)
-    H = sparse.diags([1.0, 1.0, 0.0, 0.0], format='csc') 
-    f = np.zeros(4) 
-    
-    # A_full is (4, 4), b_full is (4,)
-    # Setup ONLY once
-    prob.setup(H, f, A_full, b_full, b_full, alpha=1.0, verbose=False)
-    
-    res = prob.solve()
-    print(f"Torques: {res.x[:2]}, Status: {res.info.status}")
-    
-    # 5. Fallback/Return
-    return res.x[:2].flatten()
-
-# --- Global Scope ---
-# Define this alongside your other parameters like kp, kd, t_start, etc.
-integral_error = np.array([0.0, 0.0])
-
-# Physical constants
-m1, m2 = 0.181, 0.181 # Mass constants in kg
-l1, l2 = 0.250, 0.250 # Length constants in m
-g_val = 9.81  # Gravity constant in m/s^2
-
-# Time constants
-t_start = 0
-t_end = 10
-t_num = 1000
-
-# Initial conditions
-q_q_dot_initial = [-np.pi/4, np.pi/2, 0, 0] # [q1, q2, dq1, dq2]
-
-# Desired final task space position and velocity
-z_desired = [0.25, 0.25]
-z_dot_desired = [0, 0]
-
-# PD controller constants
-kp = 40.0
-ki = 0.0
-kd = 15.0
-
-# Define symbols
-q1, q2 = sp.symbols('q1 q2')
-dq1, dq2 = sp.symbols('dq1 dq2')
-ddq1, ddq2 = sp.symbols('ddq1 ddq2')
-tau1, tau2 = sp.symbols('tau1 tau2')
-
-q = sp.Matrix([q1, q2])
-dq = sp.Matrix([dq1, dq2])
-ddq = sp.Matrix([ddq1, ddq2])
-tau = sp.Matrix([tau1, tau2])
-
-# Jacobian (Correct)
-# Ensure x and y match the potential energy definition
-x = l1 * sp.sin(q1) + l2 * sp.sin(q1 + q2)
-y = -l1 * sp.cos(q1) - l2 * sp.cos(q1 + q2)
-z = sp.Matrix([x, y])
-J = z.jacobian(sp.Matrix([q1, q2]))
-
-# Mass Matrix elements (derived from kinetic energy)
-# M = [[m11, m12], [m21, m22]]
+# Dynamics (Mass Matrix M, Coriolis C, Gravity G)
+# 2R portion
 m11 = (m1 + m2) * l1**2 + m2 * l2**2 + 2 * m2 * l1 * l2 * sp.cos(q2)
 m12 = m2 * l2**2 + m2 * l1 * l2 * sp.cos(q2)
-m21 = m12
-m22 = m2 * l2**2
+M22 = sp.Matrix([[m11, m12], [m12, m2 * l2**2]])
 
-M = sp.Matrix([[m11, m12], [m21, m22]])
+# Expand to 3R
+M3 = sp.zeros(3, 3)
+M3[:2, :2] = M22
+M3[2, 2] = I3_val
 
-# Coriolis/Gravity vector C = C(q, dq) * dq
-# C_ij = sum_k ( Christoffel_ijk * dq_k )
-# Here is the explicit form for a 2-link arm:
 c1 = -m2 * l1 * l2 * sp.sin(q2) * (2 * dq1 * dq2 + dq2**2)
 c2 = m2 * l1 * l2 * sp.sin(q2) * dq1**2
+C3 = sp.Matrix([c1, c2, 0])
 
-C = sp.Matrix([c1, c2])
-
-# Potential Energy and Gravity (Correct)
 y1 = -l1 * sp.cos(q1)
 y2 = -l1 * sp.cos(q1) - l2 * sp.cos(q1 + q2)
-V = m1 * g_val * y1 + m2 * g_val * y2
-G = sp.Matrix([sp.diff(V, q1), sp.diff(V, q2)])
+V = m1 * g_val * y1 + m2 * g_val * y2 # Assuming wrist mass is small/neglected for G here
+G3 = sp.Matrix([sp.diff(V, q1), sp.diff(V, q2), 0])
 
-# LAMBDIFY ONCE
-z_func = sp.lambdify((q1, q2), z, 'numpy')
-J_func = sp.lambdify((q1, q2), J, 'numpy')
-M_func = sp.lambdify((q1, q2), M, 'numpy')
-C_func = sp.lambdify((q1, q2, dq1, dq2), C, 'numpy')
-G_func = sp.lambdify((q1, q2), G, 'numpy')
+# Lambdify for performance
+z_func = sp.lambdify((q1, q2, q3), z, 'numpy')
+J_func = sp.lambdify((q1, q2, q3), J, 'numpy')
+M_func = sp.lambdify((q1, q2, q3), M3, 'numpy')
+C_func = sp.lambdify((q1, q2, q3, dq1, dq2, dq3), C3, 'numpy')
+G_func = sp.lambdify((q1, q2, q3), G3, 'numpy')
 
-# Simulation Setup
-t_span = np.linspace(t_start, t_end, t_num)
+def get_control_torques(q_curr, dq_curr, z_des, z_dot_des, dt):
+    global integral_error
+    z_c = z_func(*q_curr).flatten()
+    jac = J_func(*q_curr)
+    M = M_func(*q_curr)
+    C = C_func(*q_curr, *dq_curr).flatten()
+    G = G_func(*q_curr).flatten()
 
-# Calculate the duration
-duration = t_end - t_start
+    error = z_des - z_c
+    integral_error += error * dt
+    ddz_des = kp * error + kd * (z_dot_des - jac @ dq_curr) + ki * integral_error
 
-# Calculate the time step
-dt = duration / (t_num - 1)
-initial_state = q_q_dot_initial # [q1, q2, dq1, dq2]
+    # Optimization Setup (OSQP)
+    # Variables: [tau1, tau2, tau3, ddq1, ddq2, ddq3] (6 variables)
+    A_dyn = sparse.hstack([-sparse.eye(3), sparse.csc_matrix(M)])
+    A_task = sparse.hstack([sparse.csc_matrix((3, 3)), sparse.csc_matrix(jac)])
+    A_full = sparse.vstack([A_dyn, A_task]).tocsc()
+    b_full = np.concatenate([(-C - G), ddz_des])
 
-# Integration
-# We pass a lambda that captures the state to get torques at each step
-sim_result = odeint(lambda s, t: robot_dynamics(s, t, lambda q, dq: get_control_torques(q, dq, z_desired, z_dot_desired, kp, ki, kd, dt)), 
-     initial_state, t_span)
-# Plotting the results in Configuration Space (Torus Patch)
-plt.figure(figsize=(8, 8))
-plt.plot(sim_result[:, 0], sim_result[:, 1], label='Trajectory', alpha=0.7)
+    H = sparse.diags([1.0, 1.0, 1.0, 0.1, 0.1, 0.1], format='csc') # Weights for tau and ddq
+    f = np.zeros(6)
 
-# Mark the start and end points for clarity
-plt.scatter(sim_result[0, 0], sim_result[0, 1], color='green', label='Start', zorder=5)
-plt.scatter(sim_result[-1, 0], sim_result[-1, 1], color='red', label='End', zorder=5)
+    prob = osqp.OSQP()
+    prob.setup(H, f, A_full, b_full, b_full, verbose=False)
+    res = prob.solve()
+    return res.x[:3]
 
-plt.xlabel(r'Joint 1 ($\theta_1$)')
-plt.ylabel(r'Joint 2 ($\theta_2$)')
-plt.title(r'Configuration Space Trajectory on Torus ($\mathbb{T}^2$)')
-plt.legend()
-plt.grid(True, linestyle='--', alpha=0.6)
-plt.axis('equal') # Important for visualizing angular space correctly
-plt.show() 
-
-def compute_invariant_length(sim_result, t_span):
-    length = 0
-    # Calculate dt
-    dt = t_span[1] - t_span[0]
+def robot_dynamics(state, t, z_des, z_dot_des, dt):
+    q = state[:3]
+    dq = state[3:]
+    tau = get_control_torques(q, dq, z_des, z_dot_des, dt)
     
-    for i in range(len(sim_result) - 1):
-        q = sim_result[i, :2]
-        dq = (sim_result[i+1, :2] - sim_result[i, :2]) / dt
-        
-        # Get the mass matrix at the current configuration
-        M = M_func(q[0], q[1])
-        
-        # Invariant arc-length element ds = sqrt(dq^T * M * dq) * dt
-        ds = np.sqrt(dq.T @ M @ dq) * dt
-        length += ds
-        
-    return length
+    M = M_func(*q)
+    C = C_func(*q, *dq).flatten()
+    G = G_func(*q).flatten()
+    
+    ddq = np.linalg.solve(M, (tau - C - G))
+    return np.concatenate([dq, ddq])
 
-path_length = compute_invariant_length(sim_result, t_span)
-print(f"Invariant Path Length: {path_length:.4f} m^2 kg")
+# --- Simulation Execution ---
+t_span = np.linspace(0, 10, 500)
+dt = t_span[1] - t_span[0]
+initial_state = [0.3, 0.2, 0.1, 0, 0, 0] # q1, q2, q3, dq...
+z_desired = np.array([-0.3, 0.2, np.pi]) # [x, y, phi]
+z_dot_desired = np.zeros(3)
 
-# Convert joint angles to end-effector positions
-def get_arm_positions(q1, q2):
-    # Link positions (using L1=0.25, L2=0.25)
-    # Match the downward configuration: x = l*sin(q), y = -l*cos(q)
-    x1 = l1 * np.sin(q1)
-    y1 = -l1 * np.cos(q1)
-    x2 = x1 + l2 * np.sin(q1 + q2)
-    y2 = y1 - l2 * np.cos(q1 + q2)
-    return [0, x1, x2], [0, y1, y2]
+sim_result = odeint(robot_dynamics, initial_state, t_span, args=(z_desired, z_dot_desired, dt))
 
-def update(frame):
-    q1, q2 = sim_result[frame, 0], sim_result[frame, 1]
-    xs, ys = get_arm_positions(q1, q2)
-    line.set_data(xs, ys)
-    return line,
+# --- Animation ---
+def get_arm_positions(q1, q2, q3):
+    x1, y1 = l1 * np.sin(q1), -l1 * np.cos(q1)
+    x2, y2 = x1 + l2 * np.sin(q1 + q2), y1 - l2 * np.cos(q1 + q2)
+    x3, y3 = x2 + l3 * np.sin(q1 + q2 + q3), y2 - l3 * np.cos(q1 + q2 + q3)
+    return [0, x1, x2, x3], [0, y1, y2, y3]
 
-# Animation setup
 fig, ax = plt.subplots(figsize=(6, 6))
 line, = ax.plot([], [], 'o-', lw=4)
-ax.set_xlim(-0.6, 0.6)
-ax.set_ylim(-0.6, 0.6)
+ax.set_xlim(-0.7, 0.7)
+ax.set_ylim(-0.7, 0.7)
 ax.grid()
+ax.set_title("3R Robot Arm with Wrist Control")
 
-# Create the animation
-ani = FuncAnimation(fig, update, frames=len(t_span), interval=10, blit=True)
+def update(frame):
+    q = sim_result[frame, :3]
+    xs, ys = get_arm_positions(*q)
+    line.set_data(xs, ys)
+    return line,
+# Updated Animation setup
+ani = FuncAnimation(
+    fig, 
+    update, 
+    frames=len(t_span), 
+    interval=5, 
+    blit=True, 
+    repeat=True,        # Ensure the animation loops
+    repeat_delay=5000   # Pause for 5000ms (5 seconds) before restarting
+)
+
 plt.show()
-
-# Create the animation
-ani = FuncAnimation(fig, update, frames=len(t_span), interval=20, blit=True)
-
-# Save the animation as a GIF
-# 'pillow' is the standard writer for GIFs
-ani.save('robot_arm_motion.gif', writer='pillow', fps=30)
-
-print("Animation saved as robot_arm_motion.gif")
