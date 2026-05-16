@@ -132,4 +132,10 @@ ani = FuncAnimation(
     repeat_delay=5000   # Pause for 5000ms (5 seconds) before restarting
 )
 
+# Save the animation as a GIF
+# 'pillow' is the standard writer for GIFs and is already in your requirements.txt
+ani.save('robot_arm_motion_02.gif', writer='pillow', fps=30)
+
+print("Animation saved as robot_arm_motion_02.gif")
+
 plt.show()
