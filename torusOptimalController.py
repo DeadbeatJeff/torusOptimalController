@@ -97,7 +97,7 @@ def robot_dynamics(state, t, z_des, z_dot_des, dt):
 t_span = np.linspace(0, 10, 500)
 dt = t_span[1] - t_span[0]
 initial_state = [0.3, 0.2, 0.1, 0, 0, 0] # q1, q2, q3, dq...
-z_desired = np.array([-0.3, 0.2, np.pi]) # [x, y, phi]
+z_desired = np.array([0.3, 0.2, np.pi/2]) # [x, y, phi]
 z_dot_desired = np.zeros(3)
 
 sim_result = odeint(robot_dynamics, initial_state, t_span, args=(z_desired, z_dot_desired, dt))
