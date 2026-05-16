@@ -231,6 +231,6 @@ ani = FuncAnimation(fig, update, frames=len(t_span), interval=20, blit=True)
 
 # Save the animation as a GIF
 # 'pillow' is the standard writer for GIFs
-ani.save('robot_arm_motion.gif', writer='pillow', fps=30)
+ani.save('robot_arm_motion)_01.gif', writer='pillow', fps=30)
 
 print("Animation saved as robot_arm_motion.gif")
